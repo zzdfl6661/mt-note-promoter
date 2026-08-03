@@ -1,0 +1,52 @@
+{
+  "portal_url": "https://e.dianping.com/",
+  "direct_urls": {
+    "_comment": "直达 URL, 跳过四级菜单点击。2026-07-31 验证可用(2.4s 渲染 21 行, 无重定向)。置 null 可强制走菜单点击路径。",
+    "budget_list": "https://e.dianping.com/app/peon-cpm-ncpm/html/budget-group-list.html"
+  },
+  "skip_full_scrape": {
+    "_comment": "跳过共享预算全量爬取(耗时数分钟, 仅刷新查重库用)。DB 已有历史数据时可置 true 加速; 首次运行或需刷新库时置 false。",
+    "enabled": true
+  },
+  "store_whitelist": [
+    "YOUR_STORE_NAME"
+  ],
+  "budget_keyword_by_store": {
+    "YOUR_STORE_NAME": "YOUR_BUDGET_KEYWORD"
+  },
+  "promotion": {
+    "purpose": "内容种草",
+    "region_mode": "门店附近推广",
+    "distance_km": 6,
+    "bid_per_click": 1.1,
+    "notes_per_run": 1
+  },
+  "note_selection": {
+    "strategy": "max_views",
+    "min_views": 400,
+    "comment": "策略: max_views=浏览量最高优先, 且仅推广浏览量>=min_views的笔记; 因按浏览量降序, 遇第一篇<min_views即停止该门店(后面更小)。预留: views_time_weighted / daily_avg_views"
+  },
+  "safety": {
+    "auto_submit": false,
+    "max_promotions_per_day": 500,
+    "max_bid_allowed": 2.0,
+    "max_rounds_per_store": 3
+  },
+  "reserved_options": {
+    "comment": "以下为预留参数位, 值为 null 时保持页面默认不改动",
+    "budget_daily": null,
+    "schedule_time": null,
+    "crowd_targeting": null,
+    "creative_config": null
+  },
+  "browser": {
+    "profile_dir": "data/browser_profile",
+    "headless": false,
+    "slow_mo_ms": 300,
+    "default_timeout_ms": 60000,
+    "connect_mode": "cdp",
+    "cdp_port": 9222,
+    "cdp_user_data_dir": "data/edge_debug_profile",
+    "channel": "msedge"
+  }
+}

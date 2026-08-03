@@ -1,0 +1,55 @@
+{
+  "_comment": "页面选择器配置。标记 TODO_EXPLORE 的项需在阶段0探测后回填真实选择器。支持 css/xpath/text 形式, Playwright 语法。",
+  "login": {
+    "logged_in_indicator": "TODO_EXPLORE: 登录成功后才出现的元素, 如用户头像/门店名",
+    "login_page_indicator": "TODO_EXPLORE: 登录页特征元素, 如密码输入框"
+  },
+  "nav": {
+    "promotion_center": "text=推广中心",
+    "promotion_center_sub": "text=推广中心 >> nth=1",
+    "smart_display": "li:has-text(\"智选展位\")",
+    "toolbox_hover": "li:has(.merchant-menu__submenu-title[title=\"工具箱\"])",
+    "shared_budget": "span[title=\"共享预算\"]"
+  },
+  "shared_budget_page": {
+    "_comment": "budget_row_name_cell 用 has-text 匹配门店预算行的关键词。{budget_keyword} 由 flow.py 根据 settings.json 的 budget_keyword_by_store 映射替换（无映射时回退用 store 名）。",
+    "budget_row_name_cell": "tr.merchant-table__row:has(td.merchant-table__cell-fixed-left-first:has-text(\"{budget_keyword}\")) td.merchant-table__cell-fixed-left-first",
+    "hover_popup_new_promotion": "button.budget-group-item-expand-dropdown__btn:has-text(\"新增推广\")",
+    "goto_create_promotion": "text=去新建推广"
+  },
+  "create_promotion": {
+    "purpose_content_seeding": "text=内容种草",
+    "store_selector_open": "div.merchant-select.N-shop-select div.merchant-select__inner",
+    "store_selector_clear": "button.select-clear-btn",
+    "store_selector_search": "input.merchant-select__search-input",
+    "store_selector_item": "li.merchant-select-dropdown-menu__item:has-text(\"{store_name}\")",
+    "note_modify_button": ".N-premium-note__title-btn button:has-text(\"修改\")",
+    "_comment_note": "笔记抽屉 wrapper: N-premium-notes-drawer__wrapper；卡片: premium-notes-card-container",
+    "note_list_panel": "div.N-premium-notes-drawer__wrapper, div.merchant-drawer__container-has-second",
+    "note_item": "div.premium-notes-card-container",
+    "note_title": ".note-title-text",
+    "note_views": ".note-description:has(.text:text(\"浏览量\")) .value",
+    "note_publish_date": ".note-description:has(.text:text(\"发布日期\")) .value",
+    "note_checkbox": ".note-content-container",
+    "note_confirm_modify": "text=确认修改",
+    "region_nearby": "text=门店附近区域",
+    "distance_input": "div.merchant-drawer__container.promo-city-draw input.merchant-input-number__input",
+    "bid_input": ".N-price-mode-detail input.merchant-input-number__input",
+    "submit_success_indicator": "TODO_EXPLORE: 提交成功后出现的元素, 如'提交成功'toast/弹窗/页面跳转标识",
+    "next_step": "text=下一步",
+    "save_and_submit": "text=保存并提交"
+  },
+  "creative_page": {
+    "_comment": "创意页选择器。当前全部使用默认值保留待后续自定义。",
+    "page_indicator": "TODO_EXPLORE: 创意页特征元素, 用于确认已到达该页",
+    "creative_template": null,
+    "headline_input": null,
+    "description_input": null,
+    "image_upload": null
+  },
+  "history": {
+    "promotion_list_entry": "TODO_EXPLORE: 历史推广列表入口",
+    "promotion_list_item": "TODO_EXPLORE: 历史推广条目",
+    "promotion_note_title": "TODO_EXPLORE: 条目中的笔记标题"
+  }
+}

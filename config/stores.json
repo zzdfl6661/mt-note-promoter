@@ -1,0 +1,23 @@
+{
+  "_comment": "门店列表: 自动化依次处理所有 enabled 门店。name 用美团后台全名(英文括号), search_keyword 用于门店下拉搜索, budget_keyword 用于定位共享预算行。budget_keyword 为 null 表示未匹配到预算组(可能新店/未建预算), 运行时跳过或提示。运行前请将下方示例替换为真实门店数据。",
+  "stores": [
+    {
+      "name": "YOUR_STORE_FULL_NAME_1(分店名)",
+      "search_keyword": "分店关键词",
+      "budget_keyword": "预算组关键词",
+      "enabled": true
+    },
+    {
+      "name": "YOUR_STORE_FULL_NAME_2(分店名)",
+      "search_keyword": "分店关键词",
+      "budget_keyword": "预算组关键词",
+      "enabled": true
+    },
+    {
+      "name": "YOUR_STORE_FULL_NAME_3(分店名)",
+      "search_keyword": "分店关键词",
+      "budget_keyword": null,
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+
+# 日志文件 (运行时生成, 含截图与调试信息)
+logs/
+*.log
+_run_*.log
+
+# 浏览器配置 (含登录态/Cookie, 禁止上传)
+data/browser_profile/
+data/edge_debug_profile/
+
+# 运行时数据库
+data/promoted.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# 归档压缩包
+_archive/
+*.zip
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.bak
+*.cache
