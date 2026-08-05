@@ -12,8 +12,8 @@
     "shared_budget": "span[title=\"共享预算\"]"
   },
   "shared_budget_page": {
-    "_comment": "budget_row_name_cell 用 has-text 匹配门店预算行的关键词。{budget_keyword} 由 flow.py 根据 settings.json 的 budget_keyword_by_store 映射替换（无映射时回退用 store 名）。",
-    "budget_row_name_cell": "tr.merchant-table__row:has(td.merchant-table__cell-fixed-left-first:has-text(\"{budget_keyword}\")) td.merchant-table__cell-fixed-left-first",
+    "_comment": "budget_row_name_cell 用 has-text 匹配门店预算行的关键词。{budget_keyword} 由 flow.py 根据 settings.json 的 budget_keyword_by_store 映射替换（无映射时回退用 store 名）。2026-08-05 修复: 排除'已删除'状态行, 避免同关键词多个预算组时 .first 悬停到已删除行导致'新增推广'按钮永不出现。",
+    "budget_row_name_cell": "tr.merchant-table__row:has(td.merchant-table__cell-fixed-left-first:has-text(\"{budget_keyword}\")):not(:has(.plan-status:has-text(\"已删除\"))) td.merchant-table__cell-fixed-left-first",
     "hover_popup_new_promotion": "button.budget-group-item-expand-dropdown__btn:has-text(\"新增推广\")",
     "goto_create_promotion": "text=去新建推广"
   },
@@ -36,8 +36,8 @@
     "distance_input": "div.merchant-drawer__container.promo-city-draw input.merchant-input-number__input",
     "bid_input": ".N-price-mode-detail input.merchant-input-number__input",
     "submit_success_indicator": "TODO_EXPLORE: 提交成功后出现的元素, 如'提交成功'toast/弹窗/页面跳转标识",
-    "next_step": "text=下一步",
-    "save_and_submit": "text=保存并提交"
+    "next_step": "button:has-text(\"下一步\")",
+    "save_and_submit": "button:has-text(\"保存并提交\")"
   },
   "creative_page": {
     "_comment": "创意页选择器。当前全部使用默认值保留待后续自定义。",

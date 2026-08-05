@@ -212,7 +212,9 @@ def _ensure_budget_page1(b: Browser, keyword: str):
                 n = rows.count()
                 for i in range(min(n, 60)):
                     txt = rows.nth(i).inner_text()
-                    if keyword in txt:
+                    # 2026-08-05 修复: 关键词子串可能命中"已删除"的同名预算组(如"崇文门店..."含"崇文门"),
+                    # 必须跳过已删除行继续翻页, 否则永远 hover 不到生效行(可能在下一页)。
+                    if keyword in txt and "已删除" not in txt:
                         print(f"[预算页] 目标行 '{keyword}' 已在第 {page} 页第 {i+1} 行")
                         return
                 if n == 0:
@@ -525,7 +527,7 @@ def _do_post_store_steps(b: Browser, sel: dict, settings: dict, store: dict, dry
         print(f"[INFO] 等待笔记卡片自动渲染 (第{attempt}次尝试)...")
         try:
             b.wait_for("div.N-premium-note-wrapper", state="visible",
-                       label="等待笔记卡片", timeout_ms=15000)
+                       label="等待笔记卡片", timeout_ms=8000)
             note_card_ok = True
             print("[OK] 笔记卡片已渲染")
             break
@@ -666,18 +668,18 @@ def _do_post_store_steps(b: Browser, sel: dict, settings: dict, store: dict, dry
         if "cpm-edit" in (f.url or ""):
             try:
                 f.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(1)
+                time.sleep(0.5)
             except Exception:
                 pass
             break
     b.click(cp["next_step"], "下一步")
-    time.sleep(3)
+    time.sleep(1.5)
 
     if submit_mode:
         # ===== 真实提交模式 (--run) =====
         print("[INFO] 创意页滑到底, 点保存并提交")
         b.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(1.5)
+        time.sleep(0.8)
         try:
             b.click(cp["save_and_submit"], "保存并提交")
         except Exception as e:
@@ -685,13 +687,13 @@ def _do_post_store_steps(b: Browser, sel: dict, settings: dict, store: dict, dry
             print(f"[ERROR] 点击「保存并提交」失败: {e}")
             return {"store": store_name, "submitted": False, "error": f"submit_btn_fail: {e}"}
         # 等提交结果: 可能弹确认弹窗或直接跳转, 用通用清理关闭
-        time.sleep(5)
+        time.sleep(2)
         b.shot("after_submit")
         try:
             _dismiss_modals(b, max_wait=6.0)
         except Exception as e:
             print(f"[WARN] 提交弹窗处理失败: {e}")
-        time.sleep(3)
+        time.sleep(1.5)
         b.shot("after_submit_confirm")
         # 提交成功 -> 写查重库
         try:
@@ -724,7 +726,7 @@ def _set_region(b: Browser, cp: dict, settings: dict):
     # 1) 点击「推广地域」的修改按钮, 弹出抽屉
     try:
         b.click(".cpm-edit-item.promo-region button.edit-btn", "推广地域-修改")
-        time.sleep(2)
+        time.sleep(0.8)
     except Exception as e:
         print(f"[WARN] 点击推广地域修改按钮失败: {e}")
         b.shot("region_edit_btn_fail")
@@ -740,7 +742,7 @@ def _set_region(b: Browser, cp: dict, settings: dict):
     # 3) 选「门店附近区域」radio (value=1)
     try:
         b.click("text=门店附近区域", "选择门店附近区域")
-        time.sleep(1)
+        time.sleep(0.5)
     except Exception as e:
         print(f"[WARN] 选择门店附近区域失败: {e}")
         b.shot("region_nearby_fail")
@@ -763,7 +765,7 @@ def _set_region(b: Browser, cp: dict, settings: dict):
                 save_btn.click(timeout=5000)
                 print("[OK] 地域抽屉已点保存")
                 break
-        time.sleep(2)
+        time.sleep(0.8)
     except Exception as e:
         print(f"[WARN] 地域抽屉保存失败: {e}")
         b.shot("region_drawer_save_fail")
@@ -781,7 +783,7 @@ def _set_bid(b: Browser, cp: dict, settings: dict):
         if "cpm-edit" in (f.url or ""):
             try:
                 f.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(1.2)
+                time.sleep(0.5)
             except Exception:
                 pass
             break
@@ -817,7 +819,7 @@ def _close_store_dropdown(b: Browser, cp: dict):
             click_x = min(box["x"] + box["width"] + 180, vp["width"] - 15)
             click_y = box["y"] + box["height"] / 2
             b.page.mouse.click(click_x, click_y)
-            time.sleep(1.2)
+            time.sleep(0.5)
             if not _is_store_dropdown_open(b):
                 return
             print("[门店] 点击后下拉仍开, 尝试菜单右侧空白")
@@ -927,14 +929,32 @@ def _click_store_item(b: Browser, cp: dict, store: dict) -> bool:
 
 
 def _select_store(b: Browser, cp: dict, store: dict):
-    """merchant-select 门店选择器：叉掉 → 打开 → 搜索 → 选中 → 面包屑提交。
+    """merchant-select 门店选择器：清空(优先)→ 兜底叉掉 → 打开 → 搜索 → 选中 → 面包屑提交。
     store: {name, search_keyword, budget_keyword}"""
     name = store["name"]
     search_kw = store.get("search_keyword") or name.split("(")[0].split("（")[0][:6] or name[:4]
     brand, _loc = _split_store_name(name)
     brand_kw = brand[:8]
 
-    # 1) 叉掉所有原有门店标签
+    # 0) 优先点击「清空」按钮一次性清除所有已选门店。
+    #    最稳健: 不受门店名长度 / 标签数量影响, 不用逐个点 X。
+    #    若本就无选择(按钮不存在或不可见), 视为正常, 不报错。
+    cleared = False
+    try:
+        for f in b.page.frames:
+            if "cpm-edit" in (f.url or ""):
+                cb = f.locator(cp["store_selector_clear"])
+                if cb.count() > 0 and cb.first.is_visible():
+                    cb.first.click(timeout=3000)
+                    time.sleep(1.0)
+                    cleared = True
+                break
+    except Exception:
+        pass
+    if cleared:
+        print("[门店] ✓ 点击「清空」按钮, 已清除所有已选门店")
+
+    # 1) 兜底: 逐个叉掉任何残留的门店标签(防清空按钮未出现/失效)
     deadline = time.time() + 12
     while time.time() < deadline:
         edit_frame_ready = None
@@ -969,7 +989,8 @@ def _select_store(b: Browser, cp: dict, store: dict):
                 break
         if not removed_this_round:
             break
-    print(f"[门店] 叉掉原有门店标签: {total_removed} 个")
+    if total_removed:
+        print(f"[门店] 兜底叉掉残留门店标签: {total_removed} 个")
 
     # 如果叉完后只剩目标门店，跳过搜索
     need_select = True

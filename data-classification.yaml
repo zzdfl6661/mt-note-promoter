@@ -1,0 +1,65 @@
+# 由 data-tier-guard 生成。safe_db.py 读取本文件决定写保护强度。
+# tier 为 "?" 的列必须人工裁决后改成 L0/L1/L2/L3。
+meta:
+  db: data/promoted.db
+  scanned_at: "2026-08-03T15:27:07+08:00"
+  needs_review: 0
+tables:
+  promoted_notes:
+    tier: L2
+    row_count: 190
+    columns:
+      id: {tier: L0, signal: 技术字段}
+      note_id: {tier: L1, signal: 运行态字段}
+      title: {tier: L2, signal: 业务实体标识}
+      store: {tier: L2, signal: 业务敏感字段}
+      view_count: {tier: L0, signal: 统计计数器}
+      promoted_at: {tier: L1, signal: 运行态字段}
+      source: {tier: L1, signal: 运行态字段}
+  shared_budgets:
+    tier: L2
+    row_count: 42
+    cascade_risk: true
+    columns:
+      id: {tier: L0, signal: 技术字段}
+      name: {tier: L2, signal: 业务实体标识}
+      store_keyword: {tier: L2, signal: 业务敏感字段}
+      first_seen_at: {tier: L1, signal: 运行态字段}
+      last_seen_at: {tier: L1, signal: 运行态字段}
+  promotions:
+    tier: L2
+    row_count: 596
+    columns:
+      id: {tier: L0, signal: 技术字段}
+      budget_id: {tier: L2, signal: 业务敏感字段}
+      name: {tier: L2, signal: 业务实体标识}
+      content: {tier: L2, signal: 业务敏感字段}
+      status: {tier: L1, signal: 运行态字段}
+      first_seen_at: {tier: L1, signal: 运行态字段}
+      last_seen_at: {tier: L1, signal: 运行态字段}
+  scrape_sessions:
+    tier: L1
+    row_count: 71
+    append_only: true
+    columns:
+      id: {tier: L0, signal: 技术字段}
+      scraped_at: {tier: L1, signal: 运行态字段}
+      new_budgets: {tier: L0, signal: 统计计数器}
+      new_promotions: {tier: L0, signal: 统计计数器}
+      updated_promotions: {tier: L0, signal: 统计计数器}
+      total_budgets: {tier: L0, signal: 统计计数器}
+      total_promotions: {tier: L0, signal: 统计计数器}
+  store_done:
+    tier: L2
+    row_count: 14
+    columns:
+      store: {tier: L2, signal: 业务敏感字段}
+      reason: {tier: L1, signal: 运行态字段}
+      done_at: {tier: L1, signal: 运行态字段}
+external_assets:
+  - path: data/browser_profile
+    tier: L3
+    note: 浏览器登录态目录，含 cookie
+  - path: data/edge_debug_profile
+    tier: L3
+    note: 浏览器登录态目录，含 cookie

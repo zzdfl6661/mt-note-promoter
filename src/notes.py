@@ -1,13 +1,67 @@
-"""笔记数据模型、SQLite 查重库、纯规则选择引擎（浏览量最高优先）。"""
-import contextlib
+"""笔记数据模型、SQLite 查重库、纯规则选择引擎（浏览量最高优先）。
+
+DB 访问已由 data-tier-guard 的 SafeDB 包裹（src/safe_db.py，drop-in 资产）：
+- 默认只读（mode=ro），写操作必须走 db.writer(reason) 并留审计；
+- 危险 SQL（DROP / 无 WHERE 的 DELETE·UPDATE / 表名注入 / ATTACH / 写 schema PRAGMA）一律拦截。
+外部调用方无感：本模块公开函数签名与返回形态与改造前完全一致。
+"""
+import os
 import re
 import sqlite3
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "promoted.db"
+CLASSIFICATION = ROOT / "data-classification.yaml"
+
+# SafeDB 随项目内置（data-tier-guard 的 drop-in 资产）。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_db import SafeDB  # noqa: E402
+
+# 建表 DDL：只读连接不能建表，故在首次访问前用独立连接 bootstrap。
+# 仅覆盖本模块负责的表；budget_db.py 负责 shared_budgets / promotions / scrape_sessions。
+_DDL = """
+CREATE TABLE IF NOT EXISTS promoted_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT,
+    title TEXT NOT NULL,
+    store TEXT NOT NULL,
+    view_count INTEGER,
+    promoted_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'auto'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_title_store
+    ON promoted_notes(title, store);
+CREATE TABLE IF NOT EXISTS store_done (
+    store TEXT PRIMARY KEY,
+    reason TEXT NOT NULL,
+    done_at TEXT NOT NULL
+);
+"""
+
+_db = None
+
+
+def _init_schema():
+    """用独立（可写）连接建立表结构；只读 SafeDB 连接不能执行 DDL。"""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB_PATH))
+    try:
+        con.executescript(_DDL)
+    finally:
+        con.close()
+
+
+def _safe_db():
+    global _db
+    if _db is None:
+        _init_schema()
+        cls = str(CLASSIFICATION) if CLASSIFICATION.is_file() else None
+        _db = SafeDB(str(DB_PATH), classification=cls, actor="ai")
+    return _db
 
 
 @dataclass
@@ -21,88 +75,61 @@ class Note:
 
 # ---------- 查重库 ----------
 
-@contextlib.contextmanager
-def _conn():
-    """获取 SQLite 连接，退出时自动关闭。"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS promoted_notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            note_id TEXT,
-            title TEXT NOT NULL,
-            store TEXT NOT NULL,
-            view_count INTEGER,
-            promoted_at TEXT NOT NULL,
-            source TEXT NOT NULL DEFAULT 'auto'
-        )
-    """)
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_title_store
-        ON promoted_notes(title, store)
-    """)
-    try:
-        yield conn
-    except Exception:
-        conn.rollback()
-        raise
-    else:
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def _is_real_note_id(note_id) -> bool:
     """只有真实的 data-id 才用于查重; card-N 是抽屉位置序号(无唯一性, 跨门店会冲突)。"""
     return bool(note_id) and not str(note_id).startswith("card-")
 
 
 def is_promoted(note: Note) -> bool:
-    with _conn() as c:
-        if _is_real_note_id(note.note_id):
-            row = c.execute(
-                "SELECT 1 FROM promoted_notes WHERE note_id=? LIMIT 1", (note.note_id,)
-            ).fetchone()
-            if row:
-                return True
-        row = c.execute(
-            "SELECT 1 FROM promoted_notes WHERE title=? AND store=? LIMIT 1",
-            (note.title, note.store),
-        ).fetchone()
-        return row is not None
+    db = _safe_db()
+    if _is_real_note_id(note.note_id):
+        if db.query(
+            "SELECT 1 FROM promoted_notes WHERE note_id=? LIMIT 1", (note.note_id,)
+        ):
+            return True
+    return bool(db.query(
+        "SELECT 1 FROM promoted_notes WHERE title=? AND store=? LIMIT 1",
+        (note.title, note.store),
+    ))
 
 
 def mark_promoted(note: Note, source: str = "auto"):
-    with _conn() as c:
-        c.execute(
-            """INSERT OR IGNORE INTO promoted_notes
-               (note_id, title, store, view_count, promoted_at, source)
-               VALUES (?,?,?,?,?,?)""",
-            (note.note_id if _is_real_note_id(note.note_id) else None,
-             note.title, note.store, note.views,
-             datetime.now().isoformat(timespec="seconds"), source),
+    """标记笔记已推广（幂等）。"""
+    db = _safe_db()
+    with db.writer("标记笔记已推广", snapshot=False) as w:
+        w.insert(
+            "promoted_notes",
+            {
+                "note_id": note.note_id if _is_real_note_id(note.note_id) else None,
+                "title": note.title,
+                "store": note.store,
+                "view_count": note.views,
+                "promoted_at": datetime.now().isoformat(timespec="seconds"),
+                "source": source,
+            },
+            or_ignore=True,
         )
 
 
 def mark_unpromoted(note: Note):
     """回滚：从查重库中移除笔记记录（用于提交失败回退）。"""
-    with _conn() as c:
+    db = _safe_db()
+    with db.writer("回滚：标记笔记未推广", snapshot=False) as w:
         if note.note_id:
-            c.execute("DELETE FROM promoted_notes WHERE note_id=?", (note.note_id,))
-        c.execute("DELETE FROM promoted_notes WHERE title=? AND store=?",
-                  (note.title, note.store))
+            w.delete("promoted_notes", "note_id=?", (note.note_id,))
+        w.delete("promoted_notes", "title=? AND store=?", (note.title, note.store))
 
 
 def list_promoted(store: str | None = None) -> list[tuple]:
-    with _conn() as c:
-        if store:
-            return c.execute(
-                "SELECT title, store, promoted_at, source FROM promoted_notes WHERE store=?",
-                (store,),
-            ).fetchall()
-        return c.execute(
-            "SELECT title, store, promoted_at, source FROM promoted_notes"
-        ).fetchall()
+    db = _safe_db()
+    if store:
+        rows = db.query(
+            "SELECT title, store, promoted_at, source FROM promoted_notes WHERE store=?",
+            (store,),
+        )
+    else:
+        rows = db.query("SELECT title, store, promoted_at, source FROM promoted_notes")
+    return [tuple(r.values()) for r in rows]
 
 
 # ---------- 门店"已推完"状态（跳过已执行门店, 不重新打开页面） ----------
@@ -112,53 +139,42 @@ def list_promoted(store: str | None = None) -> list[tuple]:
 
 def mark_store_done(store: str, reason: str):
     """记录门店已推完, 下次 run 直接跳过该店(0 秒, 不打开页面)。"""
-    with _conn() as c:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS store_done (
-                store TEXT PRIMARY KEY,
-                reason TEXT NOT NULL,
-                done_at TEXT NOT NULL
-            )
-        """)
-        c.execute(
-            "INSERT OR REPLACE INTO store_done (store, reason, done_at) VALUES (?,?,?)",
-            (store, reason, datetime.now().isoformat(timespec="seconds")),
-        )
+    db = _safe_db()
+    exists = db.query("SELECT 1 FROM store_done WHERE store=? LIMIT 1", (store,))
+    with db.writer("标记门店已推完", snapshot=False) as w:
+        if exists:
+            w.update("store_done", {"reason": reason, "done_at": datetime.now().isoformat(timespec="seconds")},
+                     "store=?", (store,))
+        else:
+            w.insert("store_done", {
+                "store": store, "reason": reason,
+                "done_at": datetime.now().isoformat(timespec="seconds"),
+            })
 
 
 def is_store_done(store: str) -> bool:
     """门店是否已标记推完(确定性完成)。返回 True 则 run() 跳过, 不驱动浏览器。"""
-    with _conn() as c:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS store_done (
-                store TEXT PRIMARY KEY,
-                reason TEXT NOT NULL,
-                done_at TEXT NOT NULL
-            )
-        """)
-        return c.execute("SELECT 1 FROM store_done WHERE store=?", (store,)).fetchone() is not None
+    db = _safe_db()
+    return bool(db.query("SELECT 1 FROM store_done WHERE store=? LIMIT 1", (store,)))
 
 
 def list_store_done() -> list[tuple]:
-    with _conn() as c:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS store_done (
-                store TEXT PRIMARY KEY,
-                reason TEXT NOT NULL,
-                done_at TEXT NOT NULL
-            )
-        """)
-        return c.execute("SELECT store, reason, done_at FROM store_done ORDER BY store").fetchall()
+    db = _safe_db()
+    rows = db.query("SELECT store, reason, done_at FROM store_done ORDER BY store")
+    return [tuple(r.values()) for r in rows]
 
 
 def clear_store_done(store: str | None = None) -> int:
-    """清除门店 done 标记(用户新增笔记后强制重扫)。store=None 清除全部, 返回清除条数。"""
-    with _conn() as c:
+    """清除门店 done 标记(用户新增笔记后强制重扫)。store=None 清除全部, 返回清除条数。
+
+    全表清除走 WHERE 1=1：SafeDB 禁止无 WHERE 的 DELETE（防误清整表），
+    此处用显式条件 + 强制 reason + 审计，属于有意的运维操作，仍受审计约束。
+    """
+    db = _safe_db()
+    with db.writer("清除门店 done 标记（强制重扫）", snapshot=False) as w:
         if store:
-            cur = c.execute("DELETE FROM store_done WHERE store=?", (store,))
-        else:
-            cur = c.execute("DELETE FROM store_done")
-        return cur.rowcount
+            return w.delete("store_done", "store=?", (store,))
+        return w.delete("store_done", "1=1")
 
 
 # ---------- 工具 ----------

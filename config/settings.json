@@ -9,10 +9,10 @@
     "enabled": true
   },
   "store_whitelist": [
-    "YOUR_STORE_NAME"
+    "Xcape异时刻密室逃脱真人NPC(徐家汇店)"
   ],
   "budget_keyword_by_store": {
-    "YOUR_STORE_NAME": "YOUR_BUDGET_KEYWORD"
+    "Xcape异时刻密室逃脱真人NPC(徐家汇店)": "徐家汇异时刻"
   },
   "promotion": {
     "purpose": "内容种草",
@@ -42,7 +42,7 @@
   "browser": {
     "profile_dir": "data/browser_profile",
     "headless": false,
-    "slow_mo_ms": 300,
+    "slow_mo_ms": 150,
     "default_timeout_ms": 60000,
     "connect_mode": "cdp",
     "cdp_port": 9222,

@@ -1,0 +1,290 @@
+# 由 business-process-codify 生成，是流程的唯一真源。
+# PROCESS.md 由本文件渲染，请勿手改 md。
+meta:
+  project: mt-note-promoter
+  generated_at: "2026-08-03T16:58:20+08:00"
+  source_run: logs/20260803_082945
+  coverage: 23/27
+  status: partial
+  git_rev: 274c130
+steps:
+  - id: S01
+    name: goto
+    raw_label: goto
+    actor: machine
+    impl: "src/browser.py::goto"
+    status: verified
+    duration_p50_ms: 3252
+    evidence: logs/20260803_082945/01_goto.png
+    observed_runs: 1
+  - id: S02
+    name: login_check
+    raw_label: login_check
+    actor: hybrid
+    impl: "src/flow.py::_ensure_login"
+    status: verified
+    duration_p50_ms: 3695
+    evidence: logs/20260803_082945/02_login_check.png
+    observed_runs: 1
+    human_gate:
+      trigger: "检测到未登录, 请在浏览器中完成账号密码+验证码登录。"
+      reason: "检测到未登录, 请在浏览器中完成账号密码+验证码登录。"
+      blocking: true
+  - id: S03
+    name: direct_nav_budget
+    raw_label: direct_nav_budget
+    actor: machine
+    impl: "src/flow.py::_nav_direct"
+    status: verified
+    duration_p50_ms: 2388
+    evidence: logs/20260803_082945/03_direct_nav_budget.png
+    observed_runs: 114
+  - id: S04
+    name: after_submit
+    raw_label: after_submit
+    actor: machine
+    impl: "src/flow.py::_do_post_store_steps"
+    status: verified
+    duration_p50_ms: 3104
+    evidence: logs/20260803_082945/41_after_submit.png
+    observed_runs: 100
+    on_failure:
+      action: capture
+      blast_radius: low
+      captures:
+        - label: note_card_not_rendered
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: false
+        - label: note_modify_click_fail
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: true
+          evidence: logs/20260803_082945/191_note_modify_click_fail.png
+        - label: drawer_not_found
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: false
+        - label: no_notes_found
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: false
+        - label: note_confirm_modal_fail
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: false
+        - label: submit_btn_fail
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: true
+          evidence: logs/20260803_082945/1338_submit_btn_fail.png
+        - label: save_draft_failed
+          at: "src/flow.py::_do_post_store_steps"
+          triggered: false
+  - id: S05
+    name: after_submit_confirm
+    raw_label: after_submit_confirm
+    actor: machine
+    impl: "src/flow.py::_do_post_store_steps"
+    status: verified
+    duration_p50_ms: 2421
+    evidence: logs/20260803_082945/42_after_submit_confirm.png
+    observed_runs: 100
+  - id: S06
+    name: after_human
+    raw_label: after_human
+    actor: hybrid
+    impl: "src/browser.py::pause_for_human"
+    status: unverified
+    human_gate:
+      trigger: input 调用
+      reason: 需要人工操作
+      blocking: true
+  - id: S07
+    name: after_save_draft
+    raw_label: after_save_draft
+    actor: machine
+    impl: "src/flow.py::_do_post_store_steps"
+    status: unverified
+  - id: S08
+    name: 悬停预算名称
+    raw_label: 悬停预算名称
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/04_悬停预算名称.png
+    observed_runs: 114
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1816
+  - id: S09
+    name: 悬停新增推广
+    raw_label: 悬停新增推广
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/05_悬停新增推广.png
+    observed_runs: 114
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1810
+  - id: S10
+    name: 去新建推广
+    raw_label: 去新建推广
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/06_去新建推广.png
+    observed_runs: 114
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1788
+  - id: S11
+    name: 内容种草
+    raw_label: 内容种草
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/07_内容种草.png
+    observed_runs: 114
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 2368
+  - id: S12
+    name: 打开门店下拉
+    raw_label: 打开门店下拉
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/08_打开门店下拉.png
+    observed_runs: 116
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 163
+  - id: S13
+    name: 搜索门店
+    raw_label: 搜索门店
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/09_搜索门店.png
+    observed_runs: 116
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 6319
+  - id: S14
+    name: 等待笔记卡片
+    raw_label: 等待笔记卡片
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/10_等待笔记卡片.png
+    observed_runs: 114
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 382
+  - id: S15
+    name: 打开笔记选择抽屉
+    raw_label: 打开笔记选择抽屉
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/11_打开笔记选择抽屉.png
+    observed_runs: 113
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 294
+  - id: S16
+    name: wait
+    raw_label: wait
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/12_wait.png
+    observed_runs: 113
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1731
+  - id: S17
+    name: 确认修改笔记
+    raw_label: 确认修改笔记
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/33_确认修改笔记.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 6421
+  - id: S18
+    name: 推广地域-修改
+    raw_label: 推广地域-修改
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/34_推广地域-修改.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 2140
+  - id: S19
+    name: 等待地域抽屉
+    raw_label: 等待地域抽屉
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/35_等待地域抽屉.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 203
+  - id: S20
+    name: 选择门店附近区域
+    raw_label: 选择门店附近区域
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/36_选择门店附近区域.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1150
+  - id: S21
+    name: 地域-距离km
+    raw_label: 地域-距离km
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/37_地域-距离km.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 3435
+  - id: S22
+    name: 出价-单次点击
+    raw_label: 出价-单次点击
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/38_出价-单次点击.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 1252
+  - id: S23
+    name: 下一步
+    raw_label: 下一步
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/39_下一步.png
+    observed_runs: 102
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 4836
+  - id: S24
+    name: 保存并提交
+    raw_label: 保存并提交
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/40_保存并提交.png
+    observed_runs: 100
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 5116
+  - id: S25
+    name: 选择门店
+    raw_label: 选择门店
+    actor: machine
+    status: verified
+    evidence: logs/20260803_082945/877_选择门店.png
+    observed_runs: 1
+    note: 日志中出现但源码未找到静态埋点，可能是动态标签
+    duration_p50_ms: 4964
+  - id: S26
+    name: 人工介入 - pause_for_human
+    actor: human
+    impl: "src/main.py::explore"
+    human_gate:
+      trigger: 完成登录和页面浏览后回车退出(登录态已保存)
+      reason: 完成登录和页面浏览后回车退出(登录态已保存)
+      blocking: true
+    status: unverified
+  - id: S27
+    name: 人工确认（safety.auto_submit）
+    actor: human
+    human_gate:
+      trigger: config/settings.json 中 safety.auto_submit == false
+      reason: 配置要求提交前人工复核
+      blocking: true
+    status: unverified
+risks:
+  - id: R1
+    desc: TODO_EXPLORE 占位未回填，命中即阻断
+    severity: high
+    occurrences: 6
+  - id: R2
+    desc: TODO_EXPLORE_ 占位未回填，命中即阻断
+    severity: high
+    occurrences: 2
