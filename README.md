@@ -33,13 +33,13 @@
 ## 1. 项目简介
 
 `mt-note-promoter` 是一个 **RPA（机器人流程自动化）脚本**，基于 Playwright + CDP 驱动一个**已人工登录**的 Edge 浏览器，
-模拟运营人员在美团经营宝后台的点击操作，完成「新建推广 → 内容种草 → 选笔记 → 设地域/出价 → 提交」的全流程。
+模拟运营人员在美团经营宝后台的点击操作，完成「新建推广 → 内容种草 → 选笔记 → 设地域 → 定向人群 → 出价 → 提交」的全流程。
 
 | 维度 | 说明 |
 |------|------|
 | 核心价值 | 把 37 家门店 × 数十条笔记的人工投放，变成「一条命令 + 一次确认」 |
 | 决策方式 | **纯规则**（浏览量降序 + 精确去重），**不引入 LLM**，保证确定性与零推理成本 |
-| 投放策略 | 共享预算 / 内容种草 / 门店附近推广 6km / 单次点击出价 ¥1.1 / 每次选 1 篇 |
+| 投放策略 | 共享预算 / 内容种草 / 门店附近推广 6km / 定向人群（9项自定义标签）/ 单次点击出价 ¥1.1 / 每次选 1 篇 |
 | 安全机制 | 每日上限、出价上限、自动去重、失败立即停、提交前可人工确认 |
 | 可观测性 | 每一步自动截图到 `logs/<时间戳>/`，失败定位到具体断点 |
 
@@ -199,55 +199,37 @@ sequenceDiagram
 
 ### 6.1 单门店推广主流程
 
-```mermaid
-flowchart TD
-    A[启动 Edge(CDP 连接)\n确保登录态] --> B[导航到共享预算页\n直达 URL 跳过菜单树]
-    B --> C[增量爬取预算列表\n写入 budget_db]
-    C --> D[按 budget_keyword 定位门店预算行\n悬停 → 新增推广 → 去新建推广]
-    D --> E[cpm-edit 表单:\n选推广目的=内容种草]
-    E --> F[选门店\n叉掉旧标签→搜索→选中→面包屑提交]
-    F --> G[笔记卡片自动渲染\n等待 N-premium-note-wrapper]
-    G --> H[点笔记「修改」→\n打开笔记选择抽屉]
-    H --> I[抓取候选笔记\n(标题+浏览量+data-id)]
-    I --> J{{去重过滤}}
-    J -->|查重库+历史推广\n精确同标题| K[按浏览量降序取 top1]
-    K --> L{浏览量 ≥ 门槛(400)?}
-    L -->|否| X1[标 store_done(views_below_min)\n跳下一家]
-    L -->|是| M[确认修改 → 关弹窗 →\n等抽屉关闭]
-    M --> N[设推广地域: 门店附近区域 6km\n(抽屉流程)]
-    N --> N2[设定向人群: 点定向radio → 查看/修改\n自定义标签9项 → 保存设置→抽屉关闭]
-    N2 --> O[设出价: 单次点击 1.1]
-    O --> P[下一步 → 创意页]
-    P --> Q{提交模式}
-    Q -->|dry-run| R[保存为草稿\n不写库]
-    Q -->|run| S[保存并提交\n成功→写查重库]
-    S --> T[返回结果, 继续同店下一轮]
-    R --> T
-```
+1. 启动 Edge（CDP 连接），确保登录态
+2. 导航到共享预算页（直达 URL 跳过菜单树）
+3. 增量爬取预算列表，写入 budget_db
+4. 按 budget_keyword 定位门店预算行 → 悬停 → 新增推广 → 去新建推广
+5. cpm-edit 表单：选推广目的 = 内容种草
+6. 选门店：叉掉旧标签 → 搜索 → 选中 → 面包屑提交
+7. 等待笔记卡片自动渲染
+8. 点笔记「修改」→ 打开笔记选择抽屉
+9. 抓取候选笔记（标题 + 浏览量 + data-id）
+10. **去重过滤**（查重库 + 历史推广，精确同标题）→ 按浏览量降序取 top1
+11. 浏览量 ≥ 门槛(400)？否 → 标 `store_done(views_below_min)` 跳下一家
+12. 确认修改 → 关弹窗 → 等抽屉关闭
+13. 设推广地域：门店附近区域 6km（抽屉流程）
+14. **设定向人群**：点定向 radio → 查看/修改 → 自定义标签 9 项 → 保存设置 → 抽屉关闭
+15. 设出价：单次点击 1.1
+16. 下一步 → 创意页
+17. 提交：`dry-run` 保存为草稿（不写库）/ `run` 保存并提交（成功→写查重库）
+18. 返回结果，继续同店下一轮
 
 ### 6.2 门店级与轮次级循环
 
-```mermaid
-flowchart TD
-    START[run() 加载配置+校验] --> LOGIN[ensure_login]
-    LOGIN --> LOOP[遍历 stores.json 中 enabled 门店]
-    LOOP --> SKIP1{已标 store_done?}
-    SKIP1 -->|是| NEXT[跳过(0秒)]
-    SKIP1 -->|否| SKIP2{有 budget_keyword?}
-    SKIP2 -->|否| NEXT
-    SKIP2 -->|是| ROUND[单门店轮次循环]
-    ROUND --> PROMO[_promote_one_store]
-    PROMO --> RST{瞬态失败?}
-    RST -->|是 且 round<2| ROUND
-    RST -->|否| CHECK{有可用笔记?}
-    CHECK -->|无| DONE[标 store_done\n停止该店]
-    CHECK -->|有| LIMIT{推广中达上限?}
-    LIMIT -->|是| DONE
-    LIMIT -->|否| ROUND
-    DONE --> LOOP
-    NEXT --> LOOP
-    LOOP --> END[汇总结果]
-```
+1. `run()` 加载配置 + 校验 → `ensure_login`
+2. 遍历 `stores.json` 中 enabled 门店
+3. 已标 `store_done`？→ 跳过（0 秒）
+4. 有 `budget_keyword`？→ 否则跳过
+5. 单门店轮次循环：`_promote_one_store`
+6. 瞬态失败且 round < 2？→ 重试该店
+7. 无可用笔记？→ 标 `store_done` 停止该店
+8. 推广中达上限？→ 标 `store_done` 停止该店
+9. 否则继续轮次，直到完成 → 进入下一家门店
+10. 全部遍历完 → 汇总结果
 
 > **瞬态失败自动重试**：`note_card_not_rendered` / `drawer_not_open` / `no_notes_in_drawer` / `note_modify_click_fail`
 > 等页面抖动类错误，在同一次 run 内自动重试 1 次；确定性失败（匹配失败、无可用笔记、达上限）则停止该店，绝不空转。
@@ -643,13 +625,7 @@ python -m pytest tests/ -q
 
 ## 18. 后续演进路线
 
-```mermaid
-flowchart LR
-    A[批次A: 纯性能\n(locate/直达/slow_mo)] --> B[批次B: 等待策略+稳定性\n(sleep→条件等待/熔断/截图降级)]
-    B --> C[批次C: 结构重构\n(flow.py 拆分 pages/ 层,<200行)]
-    C --> D[补全 TODO_EXPLORE\n(提交成功校验/创意页/历史)]
-    D --> E[批量调度\n(分店分批/定时/进度看板)]
-```
+**批次A（短期，收益占 70%）** → **批次B（中期）** → **批次C（结构重构）** → **补全 TODO_EXPLORE** → **批量调度**
 
 - **短期（批次 A，收益占 70%）**：`slow_mo_ms` 归零、剩余 `time.sleep` 条件化、增强「去新建推广」hover 等待。
 - **中期（批次 B/C）**：`flow.py` 拆分出 `pages/`（budget_list / promo_edit / notes_drawer / modals），
