@@ -157,6 +157,7 @@ flowchart TB
 | `notes.py` | `Note` 数据类、SQLite 去重库（`promoted_notes`）、门店完成态（`store_done`）、纯规则选择引擎 | `is_promoted/mark_promoted`、`select_best_note`、`parse_views` |
 | `budget_db.py` | 共享预算表镜像（`shared_budgets`/`promotions`）、历史推广去重、增量爬取 | `scrape_and_upsert`、`list_promoted_contents_for_budget`、`count_active_promotions` |
 | `history_import.py` | 阶段1：把后台历史推广灌入查重库，作为去重基线 | `run()` |
+| `safe_db.py` | SQLite 安全访问层：默认只读，写操作需显式开启并留审计；依据 `data-classification.yaml` 做字段级写保护 | `SafeDB`、`DangerousSQL` |
 | `retry.py` | 指数退避重试装饰器 | `retry_on_failure` |
 | `main.py` | 命令行入口与模式分发 | `main()`、`explore()` |
 
@@ -214,7 +215,8 @@ flowchart TD
     L -->|否| X1[标 store_done(views_below_min)\n跳下一家]
     L -->|是| M[确认修改 → 关弹窗 →\n等抽屉关闭]
     M --> N[设推广地域: 门店附近区域 6km\n(抽屉流程)]
-    N --> O[设出价: 单次点击 1.1]
+    N --> N2[设定向人群: 点定向radio → 查看/修改\n自定义标签9项 → 保存设置→抽屉关闭]
+    N2 --> O[设出价: 单次点击 1.1]
     O --> P[下一步 → 创意页]
     P --> Q{提交模式}
     Q -->|dry-run| R[保存为草稿\n不写库]
@@ -249,6 +251,21 @@ flowchart TD
 
 > **瞬态失败自动重试**：`note_card_not_rendered` / `drawer_not_open` / `no_notes_in_drawer` / `note_modify_click_fail`
 > 等页面抖动类错误，在同一次 run 内自动重试 1 次；确定性失败（匹配失败、无可用笔记、达上限）则停止该店，绝不空转。
+
+### 6.3 定向人群（主流程内置，2026-08-07 新增）
+
+主流程在「推广地域 → 出价」之间插入**定向人群**修改（页面顺序：地域下一行即推广人群区域），与批量脚本共用同一套已验证逻辑：
+
+1. 点「定向人群」radio（value=1）
+2. 点「查看/修改」打开人群抽屉
+3. 抽屉切「自定义人群标签」页签
+4. 勾选 9 项：年龄 `14-24岁 / 25~29岁 / 30~34岁` + 性别 `男 / 女` + 兴趣 `轰趴 / 密室 / 团建拓展 / 新奇体验`（先展开左侧「休闲娱乐」分类）
+5. 点「保存设置」（真实鼠标点击，重试 3 次）→ **确认抽屉关闭**（保存生效）
+6. **不点「保存并提交」**——由主流程继续点「下一步」→ 创意页 → 保存并提交（与原有主流程一致）
+
+- 失败策略：人群修改任何环节失败仅打印 `[WARN]`，**继续主流程**（不阻塞提交）
+- `--dry-run`（保存为草稿）模式**同样执行**人群修改
+- 实现：`src/flow.py::_set_crowd_targeting()`，复用 `scripts/batch_target_audience.py` 的 helper
 
 ---
 
@@ -373,6 +390,39 @@ python src/main.py --run --store "鬼十八恐怖密室逃脱·真人NPC·沉浸
 | `--dry-run` | 演练：填完但存草稿 | 否 | 否（保存为草稿） |
 | `--run` | 正式投放 | 是（提交后写 `auto`） | 是（`auto_submit=true` 时全自动；否则提交前终端确认） |
 | `--db` | 查看去重库 | 否 | 否 |
+
+### 9.1 批量修改推广人群（独立脚本，2026-08-07）
+
+针对**智选展位已有推广**做批量人群改造（把「智选人群」批量改成「定向人群 + 自定义标签 9 项」），与主流程独立：
+
+```bash
+# 批量修改（默认 100条/页 × 前 3 页，已定向自动跳过）
+python scripts/batch_target_audience.py --max-pages 3
+# 强制修复指定推广（跳过已定向判断，不管状态直接走完整修改流程）
+python scripts/fix_ids.py
+# 单条执行（处理第一个未定向推广，供人工验证）
+python scripts/fix_one.py
+# 验证指定推广真实状态（定向? 9项标签完整?）
+python scripts/verify_one.py 推广202608052d2
+python scripts/verify_batch.py <推广ID1> <推广ID2> ...
+```
+
+| 关键点 | 说明 |
+|--------|------|
+| 复用 CDP 登录态 | 与主流程同一套 Edge 调试浏览器，先 `start_edge_debug.bat` |
+| 进度断点续跑 | `data/batch_target_audience_progress.json`（processed_ids 跳过 / failed 重试） |
+| 提交确认 | 点「保存设置」（真实点击+抽屉关闭确认）→「保存并提交」→ 右侧弹窗点「继续提交」→ 以「提交成功」为准 |
+| 100条/页 | 选项文本带空格（"100 条/页"），脚本已做去空格匹配 |
+| 已知失败模式 | 个别推广「兴趣标签懒加载未渲染」（展开休闲娱乐后轰趴等未出现）→ 5/9 保护跳过提交，需手动（见 `手动处理清单.md`） |
+
+### 9.2 推广报表生成（2026-08-05）
+
+投放完成后可一键生成按门店分类的统计报表（CSV + XLSX），数据源为 `data/promoted.db`：
+
+```bash
+python gen_report.py
+# 输出: reports/推广笔记统计_<日期>.csv + .xlsx
+```
 
 ---
 
@@ -513,6 +563,8 @@ pie title 单轮耗时占比(旧基线)
 6. **后台遗留重复推广**：修复前 bug 造成的 3 条「新手基础」重复推广，需人工在美团后台删除（自动化无权删后台推广）。
 7. **导航稳定性**：每轮导航可能失败 1~2 次（重试可恢复），单轮偏慢，见 §13。
 8. **脆弱的 hover 类交互**：菜单 hover、预算行 hover 等依赖 CSS/JS hover 弹层，是主要不稳定来源，建议优先改为可直接 `goto`/点击的入口。
+9. **批量人群脚本的「兴趣标签懒加载」**（2026-08-07）：个别推广展开「休闲娱乐」后轰趴/密室/团建拓展/新奇体验标签未渲染（虚拟列表懒加载），勾选不足 5/9 保护跳过提交 → 需手动（见 `手动处理清单.md`）。
+10. **浏览器被关中断**：批量任务运行期间若关闭/重启 Edge 或人工操作浏览器，会报 `Target page closed` 中断；重跑（进度断点续跑）即可恢复。
 
 ---
 
@@ -526,25 +578,40 @@ mt-note-promoter/
 │   └── stores.json         # 37 家门店列表
 ├── src/
 │   ├── main.py             # CLI 入口
-│   ├── flow.py             # 主流程编排(约 1100 行, 待拆分为 pages/ 层)
+│   ├── flow.py             # 主流程编排(含 _set_crowd_targeting 定向人群)
 │   ├── browser.py          # 浏览器连接 + 跨 iframe 定位 + 操作原语
 │   ├── notes.py            # Note 模型 + 查重库 + 选择引擎
 │   ├── budget_db.py        # 共享预算镜像 + 爬取
 │   ├── history_import.py   # 历史推广初始化
+│   ├── safe_db.py          # SQLite 安全访问层(默认只读+写审计+字段级保护)
 │   ├── retry.py            # 指数退避重试
 │   └── logging_setup.py    # 日志
+├── scripts/
+│   ├── batch_target_audience.py   # 批量修改推广人群(定向+自定义标签9项)
+│   ├── batch_crowd_targeting.py   # 批量人群改造(另一版本)
+│   ├── fix_ids.py                 # 指定推广强制修复(跳过已定向判断)
+│   ├── fix_one.py                 # 单条执行(供人工验证)
+│   ├── verify_one.py / verify_batch.py / verify_audience.py  # 验证脚本
+│   └── probe_*.py                 # 页面结构探测脚本(login/drawer/edit/frame/list/scroll/state…)
 ├── tests/
 │   └── test_notes.py       # pytest 单测(解析/选择/去重)
 ├── data/
-│   ├── promoted.db         # SQLite 去重库(单一数据源)
-│   ├── edge_debug_profile/ # 登录态(CDP 模式)
-│   └── browser_profile/    # launch 模式登录态
-├── logs/                   # 163 个运行目录, 每步截图(全部保留)
-├── _archive/               # 回滚包(pre-production_20260731.zip)
-├── start_edge_debug.bat    # 一键启动 Edge 调试模式
+│   ├── promoted.db         # SQLite 去重库(单一数据源, gitignore)
+│   ├── batch_target_audience_progress.json  # 批量人群任务进度断点
+│   ├── edge_debug_profile/ # 登录态(CDP 模式, gitignore)
+│   └── browser_profile/    # launch 模式登录态(gitignore)
+├── reports/                # 推广统计报表(CSV+XLSX, gen_report.py 生成)
+├── logs/                   # 运行目录, 每步截图(gitignore, 本地保留)
+├── process.yaml            # 业务流程定义(唯一真源, PROCESS.md 由其渲染)
+├── data-classification.yaml # 数据分级(L0~L3, safe_db.py 写保护依据)
+├── gen_report.py           # 推广报表生成脚本
+├── diag_chongwen.py        # 崇文门店预算行 hover 诊断脚本
 ├── verify_direct_url.py    # 直达 URL 可用性只读验证
+├── start_edge_debug.bat    # 一键启动 Edge 调试模式
+├── PROCESS.md              # 业务流程文档(27步, 由 process.yaml 渲染)
 ├── ARCHITECTURE_OPTIMIZATION.md  # 性能诊断与重构方案
 ├── PROJECT_STATUS.md       # 项目状态报告
+├── 手动处理清单.md          # 批量人群任务失败项(人工填写)
 └── README.md               # 本文档
 ```
 
@@ -591,4 +658,4 @@ flowchart LR
 
 ---
 
-> 文档基于 2026-08-03 代码状态整理。运行细节以 `ARCHITECTURE_OPTIMIZATION.md`、`PROJECT_STATUS.md` 及 `logs/` 实测为准。
+> 文档基于 2026-08-05 代码状态整理（含主流程定向人群、批量人群脚本、报表生成、安全数据层）。运行细节以 `ARCHITECTURE_OPTIMIZATION.md`、`PROJECT_STATUS.md`、`PROCESS.md` 及 `logs/` 实测为准。

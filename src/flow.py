@@ -1,12 +1,29 @@
 """主流程编排：共享预算 -> 新建推广 -> 内容种草 -> 选笔记 -> 地域/出价 -> 提交。"""
 import json
+import sys as _sys
 import time
 from datetime import date
+from pathlib import Path as _Path
 
 from browser import Browser, load_json, ROOT
 from notes import Note, select_best_note, mark_promoted, mark_unpromoted, parse_views, list_promoted
 from notes import is_store_done, mark_store_done
 from budget_db import scrape_and_upsert, list_promoted_titles_for_keyword
+
+# 复用 batch_target_audience 的定向人群修改 helper（已验证稳定跑通）
+_SCRIPTS_DIR = _Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+from batch_target_audience import (  # noqa: E402
+    TARGET_TAGS,
+    _crowd_item,
+    _click_targeted_radio,
+    _open_crowd_drawer,
+    _click_custom_tag_tab,
+    _scroll_drawer_top,
+    _ensure_industry_expanded,
+    _check_tag,
+)
 
 
 class FlowError(RuntimeError):
@@ -655,6 +672,8 @@ def _do_post_store_steps(b: Browser, sel: dict, settings: dict, store: dict, dry
 
     # 9. 修改地域范围
     _set_region(b, cp, settings)
+    # 9.5 修改定向人群（地域下一行即推广人群区域）
+    _set_crowd_targeting(b, cp, settings)
     # 修改单价
     _set_bid(b, cp, settings)
 
@@ -769,6 +788,81 @@ def _set_region(b: Browser, cp: dict, settings: dict):
     except Exception as e:
         print(f"[WARN] 地域抽屉保存失败: {e}")
         b.shot("region_drawer_save_fail")
+
+
+def _set_crowd_targeting(b: Browser, cp: dict, settings: dict):
+    """修改定向人群（插入在地域之后、出价之前，页面顺序：地域下一行即推广人群）。
+    流程与 batch_target_audience 一致：点定向radio → 查看/修改 → 自定义人群标签 →
+    勾选9项（年龄+性别+兴趣）→ 点「保存设置」→ 确认抽屉关闭。
+    注意：不点「保存并提交」，由主流程后续点「下一步」→ 创意页 → 保存并提交。
+    失败只 WARN 不阻塞主流程。"""
+    edit_frame = None
+    for f in b.page.frames:
+        if "cpm-edit" in (f.url or ""):
+            edit_frame = f
+            break
+    if edit_frame is None:
+        print("[WARN] 未找到 cpm-edit frame, 跳过定向人群")
+        return
+    try:
+        item = _crowd_item(edit_frame)
+        if item is None:
+            print("[WARN] 推广人群区域未找到, 跳过定向人群")
+            return
+        if not _click_targeted_radio(item):
+            print("[WARN] 点定向人群 radio 失败, 跳过定向人群")
+            return
+        if not _open_crowd_drawer(edit_frame):
+            print("[WARN] 人群抽屉未打开, 跳过定向人群")
+            return
+        if not _click_custom_tag_tab(edit_frame):
+            print("[WARN] 未找到自定义人群标签页签, 尝试直接勾选")
+        time.sleep(0.8)
+        # 勾选年龄+性别（先滚回顶部渲染用户属性区）
+        _scroll_drawer_top(edit_frame)
+        time.sleep(0.5)
+        checked = 0
+        for text, label in TARGET_TAGS[:5]:
+            if _check_tag(edit_frame, text, label):
+                checked += 1
+        # 勾选兴趣（展开"休闲娱乐" + 慢滚动触发渲染）
+        _ensure_industry_expanded(edit_frame)
+        time.sleep(0.8)
+        for text, label in TARGET_TAGS[5:]:
+            if _check_tag(edit_frame, text, label):
+                checked += 1
+        if checked < 6:
+            print(f"[WARN] 人群标签勾选不足({checked}/{len(TARGET_TAGS)}), 放弃人群修改(继续主流程)")
+            return
+        # 保存设置 → 确认抽屉真正关闭（保存生效）
+        drawer_closed = False
+        for attempt in range(1, 4):
+            save_btn = edit_frame.locator("button:has-text('保存设置')").first
+            if save_btn.count() == 0:
+                break
+            try:
+                save_btn.scroll_into_view_if_needed(timeout=3000)
+                save_btn.click(timeout=5000)
+            except Exception:
+                try:
+                    save_btn.evaluate("el => el.click()")
+                except Exception:
+                    pass
+            print(f"[OK] 点击人群保存设置 (第{attempt}次)")
+            time.sleep(1.5)
+            try:
+                if edit_frame.locator("button:has-text('保存设置')").count() == 0:
+                    drawer_closed = True
+                    break
+            except Exception:
+                drawer_closed = True
+                break
+        if not drawer_closed:
+            print("[WARN] 人群保存设置后抽屉未关闭, 继续主流程")
+            return
+        print(f"[OK] 定向人群已设置({checked}项标签), 保存设置完成, 抽屉已关闭")
+    except Exception as e:
+        print(f"[WARN] 定向人群修改失败: {str(e)[:80]}")
 
 
 def _set_bid(b: Browser, cp: dict, settings: dict):
